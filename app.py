@@ -28,12 +28,13 @@ def load_data(file):
         data.drop(columns=['CUST_ID'], inplace=True, errors='ignore')
         data.fillna(data.median(), inplace=True)
         numeric_data = data.select_dtypes(include='number')
+        normalized_data = (numeric_data - numeric_data.mean()) / numeric_data.std()
         
         if numeric_data.empty:
             st.error("❌ Aucune colonne numérique détectée.")
             return pd.DataFrame()
 
-        return (numeric_data - numeric_data.mean()) / numeric_data.std()
+        return normalized_data,numeric_data
     
     except Exception as e:
         st.error(f"❌ Erreur lors du chargement du fichier : {e}")
@@ -71,12 +72,44 @@ def plot_clusters(data, labels, medoids):
     cluster_centers = pca.transform(medoids)
 
     plt.figure(figsize=(10, 6))
-    plt.scatter(reduced_data[:, 0], reduced_data[:, 1], c=labels, cmap='viridis', alpha=0.6)
-    plt.scatter(cluster_centers[:, 0], cluster_centers[:, 1], color='red', marker='x', s=200, label='Médoïdes')
+
+    unique_clusters = sorted(set(labels))
+    palette = sns.color_palette("hsv", len(unique_clusters))
+
+    # Tracer chaque cluster avec des couleurs distinctes et numéro de cluster
+    for cluster, color in zip(unique_clusters, palette):
+        plt.scatter(
+            reduced_data[labels == cluster, 0], 
+            reduced_data[labels == cluster, 1], 
+            label=f'Cluster {cluster}', 
+            alpha=0.7, 
+            color=color, 
+            edgecolor='k', 
+            s=40
+        )
+        
+    # Affichage des médoïdes en rouge
+    plt.scatter(cluster_centers[:, 0], cluster_centers[:, 1], 
+                color='red', marker='X', s=200, label='Médoïdes')
+
     plt.title("Visualisation des clusters avec CLARA")
     plt.xlabel("Composante Principale 1")
     plt.ylabel("Composante Principale 2")
-    plt.legend()
+    plt.legend(title="Clusters", loc="best")
+    plt.grid(True)
+    st.pyplot(plt)
+
+
+#Outliers
+def plot_outliers(original_data):
+    plt.figure(figsize=(12, 8))
+    sns.boxplot(data=original_data, orient="h", palette="Set2")
+    plt.title("Detection des Outliers dans les Variables")
+    plt.xlabel("Valeurs")
+    plt.ylabel("Variables")
+    plt.grid(True) 
+    plt.tight_layout()
+    plt.show()
     st.pyplot(plt)
 
 # ✅ Interface Streamlit
@@ -104,13 +137,13 @@ def main():
         st.title("📂 Importation des Données")
         uploaded_file = st.file_uploader("Importer un fichier CSV", type=["csv"])
         if uploaded_file is not None:
-            data = load_data(uploaded_file)
+            data,original_data = load_data(uploaded_file)
             if not data.empty:
                 st.session_state['uploaded_file'] = uploaded_file
                 st.session_state['data'] = data
                 st.session_state['data_loaded'] = True
                 st.write("### Aperçu des données :")
-                st.dataframe(data.head())
+                st.dataframe(original_data.head())
                 st.markdown("""
                 ### **Informations sur les Variables :**
                 - **`BALANCE`** : Montant du solde restant sur le compte pour effectuer des achats.  
@@ -138,7 +171,10 @@ def main():
                 st.write(f"**Nombre de lignes :** {data.shape[0]}")
                 st.write(f"**Nombre de colonnes :** {data.shape[1]}")
                 st.write("### Statistiques descriptives :")
-                st.dataframe(data.describe())
+                st.dataframe(original_data.describe())
+                st.write("### Visualisation des Outliers:")
+                plot_outliers(original_data)
+                
             else:
                 st.warning("⚠️ Aucune donnée valide trouvée.")
 
@@ -153,11 +189,11 @@ def main():
             end_time = time.time()
             temps_execution = end_time - start_time
             plot_clusters(data, labels_clara, data.iloc[model.medoid_indices_])
-            st.success(f"⏱️ Temps d'exécution du CLARA : {temps_execution:.2f} secondes")
+            st.success(f"⏱️ Temps d'exécution du CLARA : {temps_execution:.2f} secondes")  
         else:
             st.warning("⚠️ Veuillez importer les données avant de passer à la visualisation.")
 
-    # ✅ Section Métriques d'Évaluation
+    # ✅ Métriques d'Évaluation
     elif section == "Métriques d'Évaluation":
         st.title("📈 Métriques d'Évaluation")
         if st.session_state.get('data_loaded', False):
